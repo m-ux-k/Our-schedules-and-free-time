@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Friend Board — who's free right now</title>
+<meta name="description" content="Live status board for four friends' class schedules.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-title">
+    <span class="topbar-mark" aria-hidden="true"></span>
+    <div>
+      <h1>Friend Board</h1>
+      <p class="topbar-sub">Who's in class. Who's free. Who's free soon.</p>
+    </div>
+  </div>
+
+  <div class="topbar-right">
+    <nav class="view-toggle" aria-label="View">
+      <button data-view="dashboard" class="active">Board</button>
+      <button data-view="schedule">Schedule</button>
+    </nav>
+    <div class="clock-block">
+      <span id="live-clock">--:--:--</span>
+      <span id="live-day">—</span>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <!-- DASHBOARD VIEW -->
+  <section id="dashboard-view" class="view">
+    <div id="dashboard-cards" class="card-grid"></div>
+
+    <div class="group-banner">
+      <span class="group-banner-icon" aria-hidden="true">◆</span>
+      <span id="group-banner-text">Calculating…</span>
+    </div>
+  </section>
+
+  <!-- SCHEDULE VIEW -->
+  <section id="schedule-view" class="view hidden">
+    <div class="schedule-head">
+      <div class="person-tabs" id="person-tabs" role="tablist" aria-label="Show schedule for"></div>
+      <p class="schedule-hint">Tap any column to see what everyone's doing at that moment.</p>
+    </div>
+
+    <div class="grid-wrap">
+      <div class="hour-rail">
+        <div class="hour-rail-spacer"></div>
+        <div id="hour-rows" class="hour-rows"></div>
+      </div>
+      <div id="grid-days" class="grid-days"></div>
+    </div>
+  </section>
+
+</main>
+
+<div id="moment-panel" class="moment-panel" aria-live="polite"></div>
+
+<footer class="footer">
+  <p>Static · no login · edit <code>data.js</code> and push to update.</p>
+</footer>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
