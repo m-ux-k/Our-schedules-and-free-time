@@ -22,4 +22,4 @@
     appId: "1:282137992280:web:12f6f95fb8a98c7317be2d",
     measurementId: "G-WNS8JS5FZS"
   };
-window.FIREBASE_CONFIG = FIREBASE_CONFIG;
+window.FIREBASE_CONFIG = firebaseConfig;
