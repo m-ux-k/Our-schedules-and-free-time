@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Friend Board — who's free right now</title>
+<title>Abu-Bakar — Friend Board</title>
 <meta name="description" content="Live status board for four friends' class schedules.">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -42,13 +42,9 @@
     Not connected yet — the free/busy toggle and live sync need a Firebase config. See <code>firebase-config.js</code>.
   </div>
 
-  <nav class="page-links" aria-label="Personal pages">
-    <span>Your page:</span>
-    <a href="mohammed.html">Mohammed</a>
-    <a href="zayed.html">Zayed</a>
-    <a href="abu-bakar.html">Abu-Bakar</a>
-    <a href="danial.html">Danial</a>
-  </nav>
+  <div class="me-banner">
+    You're viewing <strong>Abu-Bakar's</strong> page — only your card below has the toggle. <a href="index.html">&larr; Group board</a>
+  </div>
 
   <!-- DASHBOARD VIEW -->
   <section id="dashboard-view" class="view">
@@ -82,12 +78,13 @@
 <div id="toast-stack" class="toast-stack" aria-live="polite"></div>
 
 <footer class="footer">
-  <p>Static · edit <code>data.js</code> and push to update · read-only board — toggle your own status on your page.</p>
+  <p>Static · edit <code>data.js</code> and push to update · toggle your own status above · everyone else's card here is read-only.</p>
 </footer>
 
 <script src="data.js"></script>
 <script src="firebase-config.js"></script>
 <script type="module" src="cloud.js"></script>
+<script>window.ME = "Abu-Bakar";</script>
 <script src="app.js"></script>
 </body>
 </html>

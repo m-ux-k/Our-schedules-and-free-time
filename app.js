@@ -97,6 +97,73 @@ function getStatus(person, now) {
   };
 }
 
+// ---------- MANUAL OVERRIDE ("I'm Free" / "I'm Not Free") ----------
+
+/**
+ * In-memory cache of the latest overrides pulled from Firestore (via
+ * cloud.js), keyed by person: { state: 'free'|'busy'|null, expiresAt, setAt }.
+ * Stays {} forever if Cloud isn't configured — app just runs schedule-only.
+ */
+let overrides = {};
+
+/**
+ * An override is only "active" until the next moment the schedule would
+ * have changed anyway (their next class starting, or midnight if none) —
+ * so a forgotten toggle can't get stuck wrong for the rest of the semester.
+ */
+function nextScheduleTransition(person, now) {
+  const dayCode = dayCodeFor(now);
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const upcoming = entriesForDay(person, dayCode).find((e) => toMinutes(e.start) > nowMin);
+  if (upcoming) {
+    const d = new Date(now);
+    d.setHours(0, 0, 0, 0);
+    d.setMinutes(toMinutes(upcoming.start));
+    return d.getTime();
+  }
+  const midnight = new Date(now);
+  midnight.setHours(24, 0, 0, 0);
+  return midnight.getTime();
+}
+
+function describeAutoReset(expiresAtMs, now) {
+  const expires = new Date(expiresAtMs);
+  if (expires.toDateString() !== now.toDateString()) return "Resets automatically at midnight";
+  const mins = expires.getHours() * 60 + expires.getMinutes();
+  return `Resets automatically at ${formatClock(mins)}`;
+}
+
+/**
+ * Merges the schedule-computed status with any active manual override.
+ * Everything downstream (cards, notifications) should call this, not
+ * getStatus() directly, so overrides are respected everywhere.
+ */
+function getEffectiveStatus(person, now) {
+  const computed = getStatus(person, now);
+  const ov = overrides[person];
+  const active = ov && ov.state && typeof ov.expiresAt === "number" && now.getTime() < ov.expiresAt;
+
+  if (!active) return { ...computed, overridden: false };
+
+  if (ov.state === "free") {
+    return {
+      state: "free",
+      overridden: true,
+      headline: "Free",
+      detail: computed.state === "class" ? `Marked free early — was in ${computed.detail}` : "Marked free",
+      sub: describeAutoReset(ov.expiresAt, now),
+    };
+  }
+
+  return {
+    state: "class",
+    overridden: true,
+    headline: "Not free",
+    detail: computed.state === "free" ? "Marked not free" : `Marked not free (also has ${computed.detail})`,
+    sub: describeAutoReset(ov.expiresAt, now),
+  };
+}
+
 // ---------- "EVERYONE FREE" FINDER ----------
 
 /** Merge a day's entries into non-overlapping busy [start,end] intervals. */
@@ -178,6 +245,86 @@ function describeGroupWindow(win, now) {
   return `Everyone's next free together: ${dayName}, ${range}.`;
 }
 
+// ---------- NOTIFICATIONS ----------
+// Two triggers only, per spec: (a) someone's class naturally ends, and
+// (b) someone presses "I'm Free" / "I'm Not Free". In-tab only — these
+// fire while this page is open, using the browser Notification API plus
+// an always-visible toast as a fallback when permission isn't granted.
+
+function showToast(title, body) {
+  const stack = document.getElementById("toast-stack");
+  if (!stack) return;
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.innerHTML = `<strong>${title}</strong><span>${body}</span>`;
+  stack.appendChild(el);
+  const raf = typeof requestAnimationFrame === "function" ? requestAnimationFrame : (fn) => setTimeout(fn, 16);
+  raf(() => el.classList.add("show"));
+  setTimeout(() => {
+    el.classList.remove("show");
+    setTimeout(() => el.remove(), 300);
+  }, 6000);
+}
+
+function notifyPeople(title, body) {
+  showToast(title, body);
+  if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+    try { new Notification(title, { body }); } catch (err) { /* ignore */ }
+  }
+}
+
+function updateNotifButton() {
+  const btn = document.getElementById("notif-btn");
+  if (!btn || typeof Notification === "undefined") return;
+  btn.classList.toggle("hidden", Notification.permission === "granted");
+}
+
+function wireNotifButton() {
+  const btn = document.getElementById("notif-btn");
+  if (!btn || typeof Notification === "undefined") {
+    if (btn) btn.classList.add("hidden");
+    return;
+  }
+  updateNotifButton();
+  btn.addEventListener("click", () => {
+    Notification.requestPermission().then(updateNotifButton);
+  });
+}
+
+// Trigger A — a class ends naturally (schedule-only, ignores overrides so
+// an override doesn't mask or fake a real class-ending event).
+let prevScheduleState = {};
+function checkScheduleTransitions(now) {
+  peopleOrder.forEach((person) => {
+    const computed = getStatus(person, now);
+    if (prevScheduleState[person] === "class" && computed.state === "free") {
+      notifyPeople(person, `Class ended — free now.`);
+    }
+    prevScheduleState[person] = computed.state;
+  });
+}
+
+// Trigger B — someone pressed the toggle (detected via Firestore setAt
+// changing). Skips the very first snapshot so page load doesn't spam
+// notifications for overrides that were already active.
+let prevSetAt = {};
+let firstCloudSnapshot = true;
+function onCloudUpdate(newOverrides) {
+  peopleOrder.forEach((person) => {
+    const ov = newOverrides[person];
+    if (!firstCloudSnapshot && ov && ov.state && ov.setAt !== prevSetAt[person]) {
+      notifyPeople(person, ov.state === "free" ? "Marked themselves Free." : "Marked themselves Not Free.");
+    }
+    prevSetAt[person] = ov && ov.setAt;
+  });
+  firstCloudSnapshot = false;
+  overrides = newOverrides;
+  renderDashboard(new Date());
+  if (!document.getElementById("schedule-view").classList.contains("hidden")) {
+    renderGrid(new Date());
+  }
+}
+
 // ---------- RENDERING: DASHBOARD ----------
 
 function initials(name) {
@@ -189,6 +336,24 @@ function initials(name) {
     .toUpperCase();
 }
 
+function wireControls(card, person) {
+  card.querySelectorAll("[data-action]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (!window.Cloud) {
+        showToast("Not connected", "Add your Firebase config to firebase-config.js to turn this on.");
+        return;
+      }
+      const now = new Date();
+      const action = btn.dataset.action;
+      if (action === "reset") {
+        window.Cloud.clearOverride(person);
+      } else {
+        window.Cloud.setOverride(person, action, nextScheduleTransition(person, now));
+      }
+    });
+  });
+}
+
 function renderDashboard(now) {
   const wrap = document.getElementById("dashboard-cards");
   const prevStates = renderDashboard._prevStates || {};
@@ -197,9 +362,10 @@ function renderDashboard(now) {
   wrap.querySelectorAll(".card").forEach((el) => el.dataset.keep = "0");
 
   peopleOrder.forEach((person) => {
-    const status = getStatus(person, now);
+    const status = getEffectiveStatus(person, now);
     nextStates[person] = status.state;
     const flipped = prevStates[person] && prevStates[person] !== status.state;
+    const isMe = window.ME === person;
 
     let card = wrap.querySelector(`[data-person="${person}"]`);
     if (!card) {
@@ -209,7 +375,7 @@ function renderDashboard(now) {
       card.innerHTML = `
         <div class="card-top">
           <span class="avatar" style="--accent:${peopleMeta[person].color}">${initials(person)}</span>
-          <span class="name">${person}</span>
+          <span class="name">${person}${isMe ? ' <em class="you-tag">you</em>' : ""}</span>
         </div>
         <div class="status-row">
           <span class="dot"></span>
@@ -217,16 +383,36 @@ function renderDashboard(now) {
         </div>
         <p class="detail"></p>
         <p class="sub"></p>
+        ${isMe ? `
+        <div class="controls">
+          <button class="ctrl-btn free" data-action="free">I'm Free</button>
+          <button class="ctrl-btn busy" data-action="busy">I'm Not Free</button>
+          <button class="ctrl-btn reset" data-action="reset">Reset to schedule</button>
+        </div>` : ""}
       `;
       wrap.appendChild(card);
+      if (isMe) wireControls(card, person);
     }
 
     card.classList.toggle("is-class", status.state === "class");
     card.classList.toggle("is-free", status.state === "free");
+    card.classList.toggle("is-overridden", !!status.overridden);
     card.querySelector(".headline").textContent = status.headline;
     card.querySelector(".detail").textContent = status.detail;
     card.querySelector(".sub").textContent = status.sub;
     card.dataset.keep = "1";
+
+    if (isMe) {
+      const controls = card.querySelector(".controls");
+      if (controls) {
+        controls.querySelectorAll("[data-action]").forEach((btn) => {
+          const isReset = btn.dataset.action === "reset";
+          if (!isReset) btn.classList.toggle("active", status.overridden && status.state === (btn.dataset.action === "free" ? "free" : "class"));
+          if (!window.Cloud) btn.title = "Add your Firebase config to firebase-config.js to turn this on";
+        });
+        controls.querySelector('[data-action="reset"]').classList.toggle("hidden", !status.overridden);
+      }
+    }
 
     if (flipped) {
       card.classList.remove("flip");
@@ -422,10 +608,19 @@ function init() {
   renderPersonTabs();
   wireGridClicks();
   wireViewToggle();
+  wireNotifButton();
+
+  if (window.Cloud) {
+    window.Cloud.subscribeStatus(onCloudUpdate);
+  } else {
+    const notice = document.getElementById("cloud-notice");
+    if (notice) notice.classList.remove("hidden");
+  }
 
   const tick = () => {
     const now = new Date();
     tickClock();
+    checkScheduleTransitions(now);
     renderDashboard(now);
     if (!document.getElementById("schedule-view").classList.contains("hidden")) {
       renderGrid(now);
