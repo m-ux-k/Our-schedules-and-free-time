@@ -30,6 +30,11 @@ import {
   setDoc,
   onSnapshot,
 } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js";
+import {
+  getAuth,
+  signInAnonymously,
+  onAuthStateChanged,
+} from "https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js";
 
 (function setup() {
   const cfg = window.FIREBASE_CONFIG;
@@ -40,23 +45,28 @@ import {
     return;
   }
 
-  let db;
-  try {
-    const app = initializeApp(cfg);
-    db = getFirestore(app);
-  } catch (err) {
-    console.error("Firebase failed to initialize:", err);
-    window.Cloud = null;
-    return;
-  }
+  let db, auth;
+  let authReady = new Promise((resolve) => {
+    try {
+      const app = initializeApp(cfg);
+      db = getFirestore(app);
+      auth = getAuth(app);
+
+      onAuthStateChanged(auth, (user) => {
+        if (user) resolve(user);
+      });
+
+      signInAnonymously(auth).catch((err) => {
+        console.error("Anonymous sign-in failed:", err);
+      });
+    } catch (err) {
+      console.error("Firebase failed to initialize:", err);
+      window.Cloud = null;
+      resolve(null);
+    }
+  });
 
   window.Cloud = {
-    /**
-     * Subscribes to live changes across all 4 people's status docs.
-     * callback receives: { PersonName: { state, expiresAt, setAt }, ... }
-     * (people with no doc yet are simply absent from the object).
-     * Returns an unsubscribe function.
-     */
     subscribeStatus(callback) {
       return onSnapshot(
         collection(db, "status"),
@@ -73,6 +83,7 @@ import {
 
     /** Sets a manual override for `person`. state is "free" or "busy". */
     async setOverride(person, state, expiresAtMs) {
+      await authReady; // wait until anonymous sign-in has completed
       await setDoc(doc(db, "status", person), {
         state,
         expiresAt: expiresAtMs,
@@ -82,6 +93,7 @@ import {
 
     /** Clears the override, reverting that person to schedule-only status. */
     async clearOverride(person) {
+      await authReady;
       await setDoc(doc(db, "status", person), {
         state: null,
         expiresAt: null,
