@@ -14,7 +14,7 @@
  */
 
  const firebaseConfig = {
-    apiKey: "AIzaSyAKegHJLHEdqjRIIMriU_6l4Hbp2B23yBE",
+    apiKey: "AIzaSyATT3tUax03Pw9fQGC67S1dZrh8sRacVJU",
     authDomain: "schedule-7ac07.firebaseapp.com",
     projectId: "schedule-7ac07",
     storageBucket: "schedule-7ac07.firebasestorage.app",
