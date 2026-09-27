@@ -4,21 +4,6 @@
  * Loaded as a <script type="module">. Wraps Firestore so the rest of
  * the app (app.js, a plain classic script) can just call window.Cloud
  * without knowing anything about Firebase.
- *
- * If firebase-config.js still has placeholder values, window.Cloud is
- * left as null and the app falls back to schedule-only mode — nothing
- * breaks, the toggle buttons just get disabled with an explanatory
- * title/tooltip.
- *
- * Firestore layout:
- *   collection "status"
- *     doc <PersonName>
- *       state:     "free" | "busy" | null   (null/missing = no override)
- *       expiresAt: number (ms since epoch) — when this override should
- *                  stop applying; the app itself checks this, nothing
- *                  server-side deletes it, so stale docs are harmless.
- *       setAt:     number (ms since epoch) — used to detect "someone
- *                  just pressed the button" for notifications.
  * -------------------------------------------------------------
  */
 
@@ -81,9 +66,8 @@ import {
       );
     },
 
-    /** Sets a manual override for `person`. state is "free" or "busy". */
     async setOverride(person, state, expiresAtMs) {
-      await authReady; // wait until anonymous sign-in has completed
+      await authReady;
       await setDoc(doc(db, "status", person), {
         state,
         expiresAt: expiresAtMs,
@@ -91,7 +75,6 @@ import {
       });
     },
 
-    /** Clears the override, reverting that person to schedule-only status. */
     async clearOverride(person) {
       await authReady;
       await setDoc(doc(db, "status", person), {
